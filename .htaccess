@@ -1,0 +1,16 @@
+# Podcast-Schnitt – Einstellungen für den Webspace (Apache, z. B. All-Inkl)
+
+# Immer über https aufrufen (nötig für Dropbox-Anmeldung, Grafikkarte und Zwischenspeicher)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# index.html nicht zwischenspeichern, damit neue Versionen sofort ankommen
+<FilesMatch "\.html$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+  </IfModule>
+</FilesMatch>
+
+# Korrekter Zeichensatz für Umlaute
+AddDefaultCharset UTF-8
