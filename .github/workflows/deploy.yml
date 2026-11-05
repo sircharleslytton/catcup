@@ -13,12 +13,11 @@ jobs:
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USER }}
+          username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
-          # Nur das Unterverzeichnis, nicht das Root
-          server-dir: /CatCup/
-          # Nur diese beiden Dateien hochladen
+          # Zielordner relativ zum FTP-Root; per Repository-Variable FTP_DIR überschreibbar ("./" wenn der FTP-Benutzer schon auf CatCup beschränkt ist)
+          server-dir: ${{ vars.FTP_DIR || 'CatCup/' }}
           exclude: |
             **/.git*
             **/.git*/**
