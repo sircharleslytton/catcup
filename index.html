@@ -3193,9 +3193,22 @@ async function dbxImport(meta, quiet) {
     if (e.code === 'auth') updateDbxButton();
   }
 }
+const dbxLookedUp = new Set();
+// local-only files (no Dropbox link yet): look for the same file in the Dropbox space (exact name + size)
+async function linkLocalToDropbox() {
+  if (!DBX.connected() || !DBX.usable()) return;
+  for (const m of S.media.filter((x) => x.status !== 'loading' && !x.dbx && x.kind && !x.still && !dbxLookedUp.has(x.id))) {
+    dbxLookedUp.add(m.id);
+    try {
+      const hits = (await DBX.search(m.name)).filter((e) => e['.tag'] === 'file' && e.name.toLowerCase() === m.name.toLowerCase() && (!m.size || e.size === m.size));
+      if (hits.length === 1) { m.dbx = dbxMetaOf(hits[0]); toast(m.name + ' in Dropbox gefunden', 3000); save(); }
+    } catch (e) { dbxLookedUp.delete(m.id); }
+  }
+}
 // load all project media that live in Dropbox but are not on this computer yet
 async function relinkDropbox() {
   if (!DBX.connected() || !DBX.usable()) return;
+  await linkLocalToDropbox();
   const todo = S.media.filter((m) => m.status === 'offline' && m.dbx && !dbxBusy.has(m.dbx.id));
   for (const m of todo) {
     dbxBusy.add(m.dbx.id);
@@ -3329,6 +3342,7 @@ async function openDbxProject(ent) {
 let dbxSaving = false;
 async function saveProjectDbx(folder) {
   if (dbxSaving) return;
+  await linkLocalToDropbox();
   let path = S.dbxProj && S.dbxProj.path;
   let mode = S.dbxProj && S.dbxProj.rev ? { '.tag': 'update', update: S.dbxProj.rev } : 'add';
   if (folder) { path = folder + '/' + safeName(S.name) + '.schnitt.json'; mode = 'add'; }
