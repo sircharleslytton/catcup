@@ -2314,6 +2314,7 @@ function renderMedia() {
     let meta, bad = false;
     if (m.status === 'offline') { meta = m.dbx ? (DBX.connected() ? 'Liegt in Dropbox – wird geladen' : 'Liegt in Dropbox – „Dropbox verbinden“ klicken') : 'Datei fehlt – erneut importieren'; bad = !m.dbx; }
     else if (m.status === 'loading') meta = m.dlProg != null ? 'Lädt aus Dropbox … ' + Math.round(m.dlProg * 100) + ' %' : 'Wird eingelesen …';
+    else if (m.lookup) meta = 'Suche in Dropbox …';
     else if (m.status === 'error') { meta = m.err || 'Fehler'; bad = true; }
     else if (m.still) meta = 'Bild · ' + m.width + '×' + m.height;
     else meta = hms(m.duration) + ' · ' + (m.hasVideo ? (m.width ? m.width + '×' + m.height : 'Video') : 'Audio') + ' · ' + mb(m.size);
@@ -3220,22 +3221,24 @@ async function linkLocalToDropbox() {
       const word = (base.match(/[\p{L}\p{N}]{4,}/gu) || []).sort((x, y) => y.length - x.length)[0];
       const isNamed = (e) => e['.tag'] === 'file' && e.name.toLowerCase() === m.name.toLowerCase();
       let all = [], named = [], where = DBX.SPACE;
+      m.lookup = true; renderMedia();
+      const t0 = performance.now();
       for (const every of [false, true]) {
-        for (const q of [m.name, base, word]) {
-          if (!q) continue;
-          try { all = await DBX.search(q, every); } catch (e) { if (!/not_found/.test(e.summary || '')) throw e; await DBX.useTeamRoot().catch(() => {}); all = []; }
-          named = all.filter(isNamed);
-          if (named.length) break;
-        }
+        const res = await Promise.all([m.name, base, word].filter(Boolean).map(async (q) => {
+          try { return await DBX.search(q, every); } catch (e) { if (!/not_found/.test(e.summary || '')) throw e; await DBX.useTeamRoot().catch(() => {}); return []; }
+        }));
+        all = res.flat(); named = all.filter(isNamed);
         if (named.length) { where = every ? 'Dropbox' : DBX.SPACE; break; }
       }
+      m.lookupMs = Math.round(performance.now() - t0);
       const seen = new Set();
       const hits = named.filter((e) => !seen.has(e.id) && seen.add(e.id) && (!m.size || e.size === m.size));
-      if (hits.length === 1) { m.dbx = dbxMetaOf(hits[0]); dbxLookedUp.add(m.id); toast(m.name + ' in Dropbox gefunden', 3000); save(); continue; }
+      if (hits.length === 1) { m.dbx = dbxMetaOf(hits[0]); dbxLookedUp.add(m.id); m.lookup = false; toast(m.name + ' in Dropbox gefunden (' + (m.lookupMs / 1000).toFixed(1).replace('.', ',') + ' s)', 3000); save(); renderMedia(); continue; }
       if (hits.length > 1) { dbxLookedUp.add(m.id); msg = m.name + ': mehrfach in Dropbox vorhanden (' + hits.map((e) => e.path_display).slice(0, 2).join(', ') + ' …) – bitte über „Dropbox“ importieren'; }
       else if (named.length) msg = m.name + ': in Dropbox gefunden, aber andere Größe (lokal ' + mbOf(m.size) + ', Dropbox ' + mbOf(named[0].size) + ') – ist der Upload fertig?';
       else msg = m.name + ': in Dropbox nicht gefunden (auch nicht außerhalb von ' + DBX.SPACE + '). Liegt die Datei in einem Team-Ordner oder geteilten Ordner?';
-    } catch (e) { msg = m.name + ': Dropbox-Suche fehlgeschlagen – ' + (e && e.message ? e.message : e); }
+    } catch (e) { m.lookup = false; msg = m.name + ': Dropbox-Suche fehlgeschlagen – ' + (e && e.message ? e.message : e); }
+    m.lookup = false; renderMedia();
     if (msg && dbxLookMsg.get(m.id) !== msg) { dbxLookMsg.set(m.id, msg); toast(msg, 9000); }
   }
 }
