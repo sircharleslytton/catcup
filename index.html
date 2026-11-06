@@ -3277,6 +3277,8 @@ async function loadDbx(path) {
     if (!dbxSearchQ && /not_found/.test(e.summary || '') && path.toLowerCase() === DBX.SPACE.toLowerCase()) {
       // start folder does not exist: maybe it lives in the team space; let the user pick it
       try { await DBX.useTeamRoot(); } catch (e2) { /* stay in the personal folder */ }
+      const guess = '/argo-projekte/Wissen & Content/Podcast';
+      try { await DBX.listFolder(guess); DBX.setSpace(guess); toast('Startordner: ' + guess, 4000); loadDbx(guess); return; } catch (e3) { /* not there: let the user pick */ }
       dbxPick = true; loadDbx('/'); return;
     }
     dbxEntries = []; $('dbxList').innerHTML = `<div class="note warn" style="padding:12px">${esc(e.message)}</div>`;
