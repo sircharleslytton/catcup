@@ -1038,7 +1038,7 @@ const DBX = (() => {
   async function call(url, init) {
     for (let attempt = 0; ; attempt++) {
       const t = await token(attempt > 0 && init._authRetry);
-      const headers = Object.assign({}, rootHeader(), init.headers, { Authorization: 'Bearer ' + t });
+      const headers = Object.assign({}, init._noRoot ? {} : rootHeader(), init.headers, { Authorization: 'Bearer ' + t });
       let r;
       try { r = await fetch(url, Object.assign({}, init, { headers })); }
       catch (e) { if (attempt < 3) { await sleep(1000 * (attempt + 1)); continue; } throw new Error('Keine Verbindung zu Dropbox'); }
@@ -1085,8 +1085,17 @@ const DBX = (() => {
     return (j.matches || []).map((m) => m.metadata && m.metadata.metadata).filter(Boolean);
   }
   const meta = (pathOrId) => rpc('files/get_metadata', { path: pathOrId });
-  async function download(pathOrId, onProgress, size) {
-    const r = await call(CONTENT + 'files/download', { method: 'POST', headers: { 'Dropbox-API-Arg': argHeader({ path: pathOrId }) } });
+  // tries the id first, then the path; team-space files sometimes only work one way
+  async function download(pathOrId, onProgress, size, alt) {
+    const tries = [[pathOrId, false]];
+    if (alt) tries.push([alt, false]);
+    tries.push([pathOrId, true]);
+    let r = null; const errs = [];
+    for (const [p, noRoot] of tries) {
+      try { r = await call(CONTENT + 'files/download', { method: 'POST', _noRoot: noRoot, headers: { 'Dropbox-API-Arg': argHeader({ path: p }) } }); break; }
+      catch (e) { errs.push((noRoot ? 'ohne Team-Root ' : '') + (p === pathOrId ? 'ID' : 'Pfad') + ': ' + e.message); if (e.code === 'auth' || (e.status && e.status !== 400 && e.status !== 409 && e.status !== 422)) throw e; }
+    }
+    if (!r) throw new Error(errs.join(' | '));
     let res = null;
     try { res = JSON.parse(r.headers.get('Dropbox-API-Result') || 'null'); } catch (e) { /* not exposed */ }
     const total = size || (res && res.size) || +r.headers.get('Content-Length') || 0;
@@ -1158,7 +1167,7 @@ const DBX = (() => {
   async function fetchFile(m, onProgress) {
     const cached = await cacheGet(m.id, m.rev, m.size);
     if (cached) { if (onProgress) onProgress(1); return { file: cached, cached: true }; }
-    const { blob } = await download(m.id || m.path_lower, onProgress, m.size);
+    const { blob } = await download(m.id || m.path_lower, onProgress, m.size, m.path || m.path_display);
     const stored = await cachePut(m.id, m.rev, blob);
     return { file: stored || blob, cached: false };
   }
