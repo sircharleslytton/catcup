@@ -1052,7 +1052,7 @@ const DBX = (() => {
         const txt = await r.text().catch(() => '');
         let summary = txt;
         try { summary = JSON.parse(txt).error_summary || txt; } catch (e) { /* text */ }
-        throw Object.assign(new Error(friendly(summary, r.status)), { summary: String(summary), status: r.status });
+        throw Object.assign(new Error(friendly(summary, r.status) + ' [' + url.replace(/^https:\/\/[^/]+\/2\//, '') + ']'), { summary: String(summary), status: r.status });
       }
       return r;
     }
@@ -1064,7 +1064,7 @@ const DBX = (() => {
     if (s.includes('insufficient_space')) return 'Nicht genug Platz in Dropbox';
     if (s.includes('missing_scope')) return 'Der Dropbox-App fehlt eine Berechtigung (files.content.read/write)';
     if (s.includes('disallowed_name')) return 'Dieser Dateiname ist in Dropbox nicht erlaubt';
-    return 'Dropbox-Fehler ' + status + (s ? ': ' + s.slice(0, 120) : '');
+    return 'Dropbox-Fehler ' + status + (s ? ': ' + s.slice(0, 300) : '');
   }
   async function rpc(ep, body) {
     const init = { method: 'POST', headers: {} };
@@ -3205,7 +3205,7 @@ async function dbxImport(meta, quiet) {
     await importFiles([named], [meta]);
   } catch (e) {
     if (S.media.includes(m)) { m.status = 'offline'; m.dlProg = null; renderMedia(); }
-    toast(meta.name + ': ' + e.message, 6000);
+    toast(meta.name + ': ' + e.message, 20000);
     if (e.code === 'auth') updateDbxButton();
   }
 }
