@@ -1488,7 +1488,7 @@ const PEAK_RATE = 25;
 async function computePeaks(m) {
   if (!m.file || !m.hasAudio || m.peaks) return;
   const N = Math.ceil((m.duration || 0) * PEAK_RATE) + 2;
-  const peaks = new Float32Array(N);
+  let peaks = new Float32Array(N);
   const tr = m.demux && m.demux.audio;
   if (tr && tr.codec && 'AudioDecoder' in window) {
     const reader = new MP4.SampleReader(fileRead(m.file));
@@ -1521,6 +1521,8 @@ async function computePeaks(m) {
     ensureAudio();
     const ab = await actx.decodeAudioData(await m.file.arrayBuffer());
     m.pcm = ab;
+    // the <audio> element only estimates the length of VBR mp3s; the decoded length is exact
+    if (!m.demux && Math.abs(ab.duration - m.duration) > 0.05) { m.duration = ab.duration; peaks = new Float32Array(Math.ceil(ab.duration * PEAK_RATE) + 2); }
     const L = ab.getChannelData(0), step = ab.sampleRate / PEAK_RATE;
     for (let i = 0; i < L.length; i++) { const b = Math.floor(i / step); const v = Math.abs(L[i]); if (v > peaks[b]) peaks[b] = v; }
   } else return;
@@ -1682,6 +1684,8 @@ function getPlayer(c, m) {
   let list = pool.get(m.id);
   if (!list) pool.set(m.id, (list = []));
   p = list.find((x) => !x.clipId);
+  // an <audio> player created before the file was decoded: replace it by the exact one
+  if (p && !m.hasVideo && m.pcm && actx && !(p.el instanceof BufEl)) { p.el.pause(); p.el.removeAttribute('src'); p.el.load(); list.splice(list.indexOf(p), 1); p = null; }
   if (!p) {
     if (list.length >= 4) return null;
     ensureAudio();
