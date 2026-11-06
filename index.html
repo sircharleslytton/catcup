@@ -1052,7 +1052,8 @@ const DBX = (() => {
         const txt = await r.text().catch(() => '');
         let summary = txt;
         try { summary = JSON.parse(txt).error_summary || txt; } catch (e) { /* text */ }
-        throw Object.assign(new Error(friendly(summary, r.status) + ' [' + url.replace(/^https:\/\/[^/]+\/2\//, '') + ']'), { summary: String(summary), status: r.status });
+        if (r.status === 400 || /^other/.test(String(summary))) console.warn('Dropbox', url, r.status, txt);
+        throw Object.assign(new Error(friendly(summary, r.status) + (/^other/.test(String(summary)) ? ' ' + String(txt).replace(/\s+/g, ' ').slice(0, 300) : '') + ' [' + url.replace(/^https:\/\/[^/]+\/2\//, '') + ']'), { summary: String(summary), status: r.status, raw: txt });
       }
       return r;
     }
@@ -1094,6 +1095,15 @@ const DBX = (() => {
     for (const [p, noRoot] of tries) {
       try { r = await call(CONTENT + 'files/download', { method: 'POST', _noRoot: noRoot, headers: { 'Dropbox-API-Arg': argHeader({ path: p }) } }); break; }
       catch (e) { errs.push((noRoot ? 'ohne Team-Root ' : '') + (p === pathOrId ? 'ID' : 'Pfad') + ': ' + e.message); if (e.code === 'auth' || (e.status && e.status !== 400 && e.status !== 409 && e.status !== 422)) throw e; }
+    }
+    if (!r) {
+      // last resort: a temporary direct link
+      try {
+        const tl = await rpc('files/get_temporary_link', { path: pathOrId });
+        const rr = await fetch(tl.link);
+        if (!rr.ok) throw new Error('Direktlink ' + rr.status);
+        r = rr;
+      } catch (e) { errs.push('Direktlink: ' + e.message); }
     }
     if (!r) throw new Error(errs.join(' | '));
     let res = null;
