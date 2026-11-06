@@ -3193,16 +3193,26 @@ async function dbxImport(meta, quiet) {
     if (e.code === 'auth') updateDbxButton();
   }
 }
-const dbxLookedUp = new Set();
+const dbxLookedUp = new Set(), dbxLookMsg = new Map();
+const mbOf = (n) => (n / 1048576).toFixed(1).replace('.', ',') + ' MB';
 // local-only files (no Dropbox link yet): look for the same file in the Dropbox space (exact name + size)
 async function linkLocalToDropbox() {
   if (!DBX.connected() || !DBX.usable()) return;
   for (const m of S.media.filter((x) => x.status !== 'loading' && !x.dbx && x.kind && !x.still && !dbxLookedUp.has(x.id))) {
-    dbxLookedUp.add(m.id);
+    let msg = null;
     try {
-      const hits = (await DBX.search(m.name)).filter((e) => e['.tag'] === 'file' && e.name.toLowerCase() === m.name.toLowerCase() && (!m.size || e.size === m.size));
-      if (hits.length === 1) { m.dbx = dbxMetaOf(hits[0]); toast(m.name + ' in Dropbox gefunden', 3000); save(); }
-    } catch (e) { dbxLookedUp.delete(m.id); }
+      const base = m.name.replace(/\.[^.]+$/, '');
+      let all = await DBX.search(m.name);
+      if (!all.some((e) => e['.tag'] === 'file' && e.name.toLowerCase() === m.name.toLowerCase())) all = all.concat(await DBX.search(base));
+      const named = all.filter((e) => e['.tag'] === 'file' && e.name.toLowerCase() === m.name.toLowerCase());
+      const seen = new Set();
+      const hits = named.filter((e) => !seen.has(e.id) && seen.add(e.id) && (!m.size || e.size === m.size));
+      if (hits.length === 1) { m.dbx = dbxMetaOf(hits[0]); dbxLookedUp.add(m.id); toast(m.name + ' in Dropbox gefunden', 3000); save(); continue; }
+      if (hits.length > 1) { dbxLookedUp.add(m.id); msg = m.name + ': mehrfach in Dropbox vorhanden (' + hits.map((e) => e.path_display).slice(0, 2).join(', ') + ' …) – bitte über „Dropbox“ importieren'; }
+      else if (named.length) msg = m.name + ': in Dropbox gefunden, aber andere Größe (lokal ' + mbOf(m.size) + ', Dropbox ' + mbOf(named[0].size) + ') – ist der Upload fertig?';
+      else msg = m.name + ': in Dropbox unter ' + DBX.SPACE + ' nicht gefunden (' + all.length + ' Treffer für den Namen)';
+    } catch (e) { msg = m.name + ': Dropbox-Suche fehlgeschlagen – ' + (e && e.message ? e.message : e); }
+    if (msg && dbxLookMsg.get(m.id) !== msg) { dbxLookMsg.set(m.id, msg); toast(msg, 9000); }
   }
 }
 // load all project media that live in Dropbox but are not on this computer yet
