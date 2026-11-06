@@ -1656,6 +1656,26 @@ const pv = $('pv'), pctx = pv.getContext('2d');
 const pool = new Map();     // mediaId -> players
 const assigned = new Map(); // clipId -> player
 let needPreview = true;
+// Sample-accurate player for audio-only files (mp3/wav) that are already decoded.
+// <audio> elements seek MP3s by estimating the byte position, which drifts far from the waveform in long files.
+class BufEl {
+  constructor(buf, out) { this.buf = buf; this.out = out; this.paused = true; this.off = 0; this.t0 = 0; this.node = null; this.seeking = false; this.readyState = 4; }
+  get currentTime() { return this.paused ? this.off : Math.min(this.buf.duration, this.off + (actx.currentTime - this.t0)); }
+  set currentTime(v) { v = Math.max(0, v); if (this.paused) this.off = v; else { this._stop(); this.off = v; this._start(); } }
+  _start() {
+    if (this.off >= this.buf.duration) { this.paused = true; return; }
+    const n = actx.createBufferSource();
+    n.buffer = this.buf; n.connect(this.out);
+    this.t0 = actx.currentTime; n.start(0, this.off);
+    n.onended = () => { if (this.node === n) { this.node = null; this.paused = true; this.off = this.buf.duration; } };
+    this.node = n; this.paused = false;
+  }
+  _stop() { const n = this.node; if (n) { n.onended = null; this.node = null; try { n.stop(); } catch (e) { /* already stopped */ } n.disconnect(); } }
+  play() { if (this.paused) this._start(); return Promise.resolve(); }
+  pause() { if (!this.paused) { this.off = this.currentTime; this._stop(); this.paused = true; } }
+  removeAttribute() {}
+  load() {}
+}
 function getPlayer(c, m) {
   let p = assigned.get(c.id);
   if (p) return p;
@@ -1665,11 +1685,16 @@ function getPlayer(c, m) {
   if (!p) {
     if (list.length >= 4) return null;
     ensureAudio();
-    const el = document.createElement(m.hasVideo ? 'video' : 'audio');
-    el.src = m.url; el.preload = 'auto'; el.playsInline = true;
-    let g = null;
-    if (actx) { try { const src = actx.createMediaElementSource(el); g = actx.createGain(); g.gain.value = 0; src.connect(g).connect(master); } catch (e) { g = null; } }
-    if (!g) el.volume = 0;
+    let el, g = null;
+    if (!m.hasVideo && m.pcm && actx) {
+      g = actx.createGain(); g.gain.value = 0; g.connect(master);
+      el = new BufEl(m.pcm, g);
+    } else {
+      el = document.createElement(m.hasVideo ? 'video' : 'audio');
+      el.src = m.url; el.preload = 'auto'; el.playsInline = true;
+      if (actx) { try { const src = actx.createMediaElementSource(el); g = actx.createGain(); g.gain.value = 0; src.connect(g).connect(master); } catch (e) { g = null; } }
+      if (!g) el.volume = 0;
+    }
     p = { el, g, clipId: null, m };
     list.push(p);
   }
