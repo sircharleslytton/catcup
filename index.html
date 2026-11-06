@@ -1051,6 +1051,8 @@ const DBX = (() => {
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
         let summary = txt;
+        const sc = /required scope '([\w.]+)'/.exec(txt);
+        if (sc) throw Object.assign(new Error('Der Dropbox-App fehlt die Berechtigung „' + sc[1] + '“. In der App Console unter „Permissions“ aktivieren, dann „Submit“ klicken und in der App „Abmelden“ und neu anmelden.'), { summary: 'missing_scope', status: 400, code: 'scope' });
         try { summary = JSON.parse(txt).error_summary || txt; } catch (e) { /* text */ }
         if (r.status === 400 || /^other/.test(String(summary))) console.warn('Dropbox', url, r.status, txt);
         throw Object.assign(new Error(friendly(summary, r.status) + (/^other/.test(String(summary)) ? ' ' + String(txt).replace(/\s+/g, ' ').slice(0, 300) : '') + ' [' + url.replace(/^https:\/\/[^/]+\/2\//, '') + ']'), { summary: String(summary), status: r.status, raw: txt });
@@ -1094,7 +1096,7 @@ const DBX = (() => {
     let r = null; const errs = [];
     for (const [p, noRoot] of tries) {
       try { r = await call(CONTENT + 'files/download', { method: 'POST', _noRoot: noRoot, headers: { 'Dropbox-API-Arg': argHeader({ path: p }) } }); break; }
-      catch (e) { errs.push((noRoot ? 'ohne Team-Root ' : '') + (p === pathOrId ? 'ID' : 'Pfad') + ': ' + e.message); if (e.code === 'auth' || (e.status && e.status !== 400 && e.status !== 409 && e.status !== 422)) throw e; }
+      catch (e) { errs.push((noRoot ? 'ohne Team-Root ' : '') + (p === pathOrId ? 'ID' : 'Pfad') + ': ' + e.message); if (e.code === 'auth' || e.code === 'scope' || (e.status && e.status !== 400 && e.status !== 409 && e.status !== 422)) throw e; }
     }
     if (!r) {
       // last resort: a temporary direct link
