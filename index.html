@@ -338,7 +338,7 @@ details.grp[open] summary::after { content: ' ▾'; }
     <div class="dbx-top"><h2 id="dbxTitle">Dropbox</h2><span class="note" id="dbxAcct"></span></div>
     <div class="dbx-bar"><nav class="crumbs" id="dbxCrumbs" aria-label="Ordnerpfad"></nav><input type="search" id="dbxSearch" placeholder="Im Podcast-Ordner suchen" aria-label="Suchen"></div>
     <div class="dbx-list" id="dbxList"></div>
-    <div class="acts"><button class="btn" id="dbxLocalOpen">Lokale Datei öffnen</button><button class="btn" id="dbxLocalSave">Als Datei speichern</button><button class="btn" id="dbxLogout" hidden>Abmelden</button><span style="flex:1"></span><button class="btn" id="dbxClose">Schließen</button><button class="btn primary" id="dbxHere" hidden>Hier speichern</button></div>
+    <div class="acts"><button class="btn" id="dbxLocalOpen">Lokale Datei öffnen</button><button class="btn" id="dbxLocalSave">Als Datei speichern</button><button class="btn" id="dbxLogout" hidden>Abmelden</button><span style="flex:1"></span><button class="btn" id="dbxClose">Schließen</button><button class="btn" id="dbxSetSpace" hidden>Als Startordner festlegen</button><button class="btn primary" id="dbxHere" hidden>Hier speichern</button></div>
   </div>
 </div>
 <div class="scrim" id="choiceDlg" hidden>
@@ -932,7 +932,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 // Dropbox access from the browser: PKCE login, API calls, upload sessions, local file cache (OPFS)
 const DBX = (() => {
   const APP_KEY = 'zsm6svd9b7pm90j';
-  const SPACE = '/podcast';
+  const SPACE0 = '/podcast';
   const LS = 'podcast-schnitt.dbx';
   const SS = 'podcast-schnitt.dbx.pkce';
   const API = 'https://api.dropboxapi.com/2/';
@@ -950,6 +950,19 @@ const DBX = (() => {
   const usable = () => (location.protocol === 'https:' || location.hostname === 'localhost') && !/claude\.ai$|claudeusercontent\.com$/.test(location.hostname);
   const connected = () => !!(ls.get() && ls.get().refresh);
   const account = () => (ls.get() || {}).name || '';
+  const space = () => (ls.get() || {}).space || SPACE0;
+  const setSpace = (p) => ls.set({ ...(ls.get() || {}), space: p });
+  // team accounts: the team space is a different "root" than the personal folder; switch to it only when needed
+  const rootHeader = () => { const r = (ls.get() || {}).root; return r ? { 'Dropbox-API-Path-Root': JSON.stringify({ '.tag': 'root', root: r }) } : {}; };
+  async function useTeamRoot() {
+    const st = ls.get() || {};
+    if (st.rootChecked) return !!st.root;
+    const acc = await rpc('users/get_current_account', null);
+    const ri = acc.root_info || {};
+    const root = ri.root_namespace_id && ri.root_namespace_id !== ri.home_namespace_id ? ri.root_namespace_id : null;
+    ls.set({ ...(ls.get() || {}), rootChecked: true, root });
+    return !!root;
+  }
 
   function b64url(bytes) {
     let s = '';
@@ -988,7 +1001,7 @@ const DBX = (() => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.refresh_token) return 'Anmeldung fehlgeschlagen: ' + (j.error_description || j.error || r.status);
     access = j.access_token; accessExp = Date.now() + (j.expires_in - 120) * 1000;
-    ls.set({ refresh: j.refresh_token, accountId: j.account_id });
+    ls.set({ ...(ls.get() || {}), refresh: j.refresh_token, accountId: j.account_id });
     try {
       const acc = await rpc('users/get_current_account', null);
       ls.set({ ...ls.get(), name: acc.name && acc.name.display_name });
@@ -1025,7 +1038,7 @@ const DBX = (() => {
   async function call(url, init) {
     for (let attempt = 0; ; attempt++) {
       const t = await token(attempt > 0 && init._authRetry);
-      const headers = Object.assign({}, init.headers, { Authorization: 'Bearer ' + t });
+      const headers = Object.assign({}, rootHeader(), init.headers, { Authorization: 'Bearer ' + t });
       let r;
       try { r = await fetch(url, Object.assign({}, init, { headers })); }
       catch (e) { if (attempt < 3) { await sleep(1000 * (attempt + 1)); continue; } throw new Error('Keine Verbindung zu Dropbox'); }
@@ -1067,7 +1080,7 @@ const DBX = (() => {
   }
   async function search(q, everywhere) {
     const opt = { max_results: 100, file_status: 'active', filename_only: true };
-    if (!everywhere) opt.path = SPACE;
+    if (!everywhere) opt.path = space();
     const j = await rpc('files/search_v2', { query: q, options: opt });
     return (j.matches || []).map((m) => m.metadata && m.metadata.metadata).filter(Boolean);
   }
@@ -1150,7 +1163,7 @@ const DBX = (() => {
     return { file: stored || blob, cached: false };
   }
   const parent = (p) => { const i = p.lastIndexOf('/'); return i <= 0 ? '' : p.slice(0, i); };
-  return { SPACE, redirectUri, usable, connected, account, login, logout, handleRedirect, listFolder, search, meta, download, upload, fetchFile, parent, rpc };
+  return { get SPACE() { return space(); }, setSpace, useTeamRoot, redirectUri, usable, connected, account, login, logout, handleRedirect, listFolder, search, meta, download, upload, fetchFile, parent, rpc };
 })();
 if (typeof module !== 'undefined') module.exports = DBX;
 
@@ -3125,7 +3138,7 @@ $('btnExport').onclick = openExport;
 const PROJ_RE = /\.schnitt\.json$/i;
 const MEDIA_RE = /\.(mp4|m4v|mov|m4a|mp3|wav|aac|png|jpe?g|webp)$/i;
 const REC_KEY = 'podcast-schnitt.recent';
-let dbxPath = DBX.SPACE, dbxEntries = [], dbxMode = 'open', dbxLoading = false, dbxSearchQ = '', dbxSearchTimer = null;
+let dbxPick = false, dbxPath = DBX.SPACE, dbxEntries = [], dbxMode = 'open', dbxLoading = false, dbxSearchQ = '', dbxSearchTimer = null;
 const dbxBusy = new Set();
 const folderOf = (p) => DBX.parent(p || '');
 function recent() { try { return JSON.parse(localStorage.getItem(REC_KEY) || '[]'); } catch (e) { return []; } }
@@ -3210,7 +3223,7 @@ async function linkLocalToDropbox() {
       for (const every of [false, true]) {
         for (const q of [m.name, base, word]) {
           if (!q) continue;
-          all = await DBX.search(q, every);
+          try { all = await DBX.search(q, every); } catch (e) { if (!/not_found/.test(e.summary || '')) throw e; await DBX.useTeamRoot().catch(() => {}); all = []; }
           named = all.filter(isNamed);
           if (named.length) break;
         }
@@ -3261,6 +3274,11 @@ async function loadDbx(path) {
   try {
     dbxEntries = dbxSearchQ ? await DBX.search(dbxSearchQ) : await DBX.listFolder(path);
   } catch (e) {
+    if (!dbxSearchQ && /not_found/.test(e.summary || '') && path.toLowerCase() === DBX.SPACE.toLowerCase()) {
+      // start folder does not exist: maybe it lives in the team space; let the user pick it
+      try { await DBX.useTeamRoot(); } catch (e2) { /* stay in the personal folder */ }
+      dbxPick = true; loadDbx('/'); return;
+    }
     dbxEntries = []; $('dbxList').innerHTML = `<div class="note warn" style="padding:12px">${esc(e.message)}</div>`;
     dbxLoading = false; updateDbxButton();
     if (e.code === 'auth') renderDbx();
@@ -3296,6 +3314,8 @@ function renderDbx() {
   const rank = (e) => (e['.tag'] === 'folder' ? 0 : PROJ_RE.test(e.name) ? 1 : 2);
   rows.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'de', { numeric: true }));
   let html = '';
+  $('dbxSetSpace').hidden = !(dbxMode === 'open' && !dbxSearchQ && dbxPath !== '/' && dbxPath.toLowerCase() !== DBX.SPACE.toLowerCase());
+  if (dbxPick && dbxPath === '/') html += `<div class="note warn" style="padding:10px 12px">Der Ordner <b>${esc(DBX.SPACE)}</b> gibt es in Deiner Dropbox nicht. Öffne Deinen Podcast-Ordner und klick unten auf „Als Startordner festlegen“.</div>`;
   if (!dbxSearchQ && dbxPath.toLowerCase() === DBX.SPACE.toLowerCase() && dbxMode === 'open') {
     const rc = recent();
     if (rc.length) html += '<div class="dbx-sec">Zuletzt geöffnet</div>' + rc.map((r) => `<div class="dbx-row" data-recent="${esc(r.id)}"><span class="dbx-ic proj">${IC.film}</span><div class="dbx-n"><div>${esc(r.name.replace(PROJ_RE, ''))}</div><small>${esc(folderOf(r.path))}</small></div><button class="btn">Öffnen</button></div>`).join('') + '<div class="dbx-sec">Ordner</div>';
@@ -3337,6 +3357,7 @@ $('dbxDlg').addEventListener('click', (e) => { if (e.target === $('dbxDlg')) clo
 $('dbxLogout').onclick = () => { DBX.logout(); updateDbxButton(); renderDbx(); renderMedia(); toast('Von Dropbox abgemeldet'); };
 $('dbxLocalOpen').onclick = () => { closeDbx(); $('projIn').click(); };
 $('dbxLocalSave').onclick = async () => { await saveBlob(new Blob([JSON.stringify(serial(), null, 1)], { type: 'application/json' }), safeName(S.name) + '.json'); };
+$('dbxSetSpace').onclick = () => { DBX.setSpace(dbxPath); dbxPick = false; dbxLookedUp.clear(); toast('Startordner: ' + dbxPath, 4000); loadDbx(dbxPath); relinkDropbox(); };
 $('dbxHere').onclick = () => { closeDbx(); saveProjectDbx(dbxPath); };
 
 // --- projects in Dropbox ---
