@@ -662,6 +662,9 @@ const MP4 = (() => {
   const str = (s) => enc.encode(s);
   const box = (type, ...parts) => { const body = cat(parts); return cat([u32(body.length + 8), str(type), body]); };
   const fbox = (type, v, f, ...parts) => box(type, u8(v), u8(f >> 16), u16(f & 0xffff), ...parts);
+  // array variants: spreading 100k+ items into call arguments overflows the stack on long episodes
+  const boxA = (type, parts) => { const body = cat(parts); return cat([u32(body.length + 8), str(type), body]); };
+  const fboxA = (type, v, f, parts) => boxA(type, [u8(v), u8(f >> 16), u16(f & 0xffff), ...parts]);
   const MATRIX = cat([u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000)]);
   function descr(tag, body) { return cat([u8(tag), u8(0x80), u8(0x80), u8(0x80), u8(body.length), body]); }
 
@@ -729,27 +732,27 @@ const MP4 = (() => {
         if (stts.length && stts[stts.length - 1][1] === d) stts[stts.length - 1][0]++;
         else stts.push([1, d]);
       }
-      const sttsB = fbox('stts', 0, 0, u32(stts.length), ...stts.flatMap(([c, d]) => [u32(c), u32(d)]));
+      const sttsB = fboxA('stts', 0, 0, [u32(stts.length), ...stts.flatMap(([c, d]) => [u32(c), u32(d)])]);
       // ctts
       let cttsB = new Uint8Array(0);
       const cto = pts.map((p, i) => p - dts[i] + shift);
       if (cto.some((c) => c !== 0)) {
         const runs = [];
         for (const c of cto) { if (runs.length && runs[runs.length - 1][1] === c) runs[runs.length - 1][0]++; else runs.push([1, c]); }
-        cttsB = fbox('ctts', 0, 0, u32(runs.length), ...runs.flatMap(([c, o]) => [u32(c), u32(o)]));
+        cttsB = fboxA('ctts', 0, 0, [u32(runs.length), ...runs.flatMap(([c, o]) => [u32(c), u32(o)])]);
       }
       let stssB = new Uint8Array(0);
       if (tr.kind === 'video') {
         const keys = []; S.forEach((s, i) => s.key && keys.push(i + 1));
-        stssB = fbox('stss', 0, 0, u32(keys.length), ...keys.map(u32));
+        stssB = fboxA('stss', 0, 0, [u32(keys.length), ...keys.map((k) => u32(k))]);
       }
       // chunks of this track
       const myChunks = this.chunks.filter((c) => c.track === tr);
       const stscRuns = [];
       myChunks.forEach((c, i) => { if (!stscRuns.length || stscRuns[stscRuns.length - 1][1] !== c.count) stscRuns.push([i + 1, c.count]); });
-      const stscB = fbox('stsc', 0, 0, u32(stscRuns.length), ...stscRuns.flatMap(([f, c]) => [u32(f), u32(c), u32(1)]));
-      const stszB = fbox('stsz', 0, 0, u32(0), u32(n), ...S.map((s) => u32(s.size)));
-      const co64B = fbox('co64', 0, 0, u32(myChunks.length), ...myChunks.map((c) => u64(base + c.off)));
+      const stscB = fboxA('stsc', 0, 0, [u32(stscRuns.length), ...stscRuns.flatMap(([f, c]) => [u32(f), u32(c), u32(1)])]);
+      const stszB = fboxA('stsz', 0, 0, [u32(0), u32(n), ...S.map((s) => u32(s.size))]);
+      const co64B = fboxA('co64', 0, 0, [u32(myChunks.length), ...myChunks.map((c) => u64(base + c.off))]);
       const stbl = box('stbl', this._stsd(tr), sttsB, cttsB, stssB, stscB, stszB, co64B);
       const mediaDur = n ? dts[n - 1] - dts[0] + stts[stts.length - 1][1] : 0;
       const presDur = mediaDur;
