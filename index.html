@@ -2804,9 +2804,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'ArrowRight' || k === 'ArrowLeft') { e.preventDefault(); const d = e.shiftKey ? 1 : 1 / S.settings.fps; setPlayhead(S.t + (k === 'ArrowRight' ? d : -d)); autoscroll(); }
   else if (k === 'Home') { setPlayhead(0); autoscroll(); }
   else if (k === 'End') { setPlayhead(projEnd()); autoscroll(); }
-  else if (k === '+' || k === '=' || e.code === 'NumpadAdd') { e.preventDefault(); zoomTo(S.pps * 1.4); }
-  else if (k === '-' || k === '_' || e.code === 'NumpadSubtract') { e.preventDefault(); zoomTo(S.pps / 1.4); }
-  else if (mod && k === '0') { e.preventDefault(); $('btnFit').onclick(); }
+  else if (!mod && (k === '+' || k === '=' || e.code === 'NumpadAdd')) zoomTo(S.pps * 1.4);
+  else if (!mod && (k === '-' || k === '_' || e.code === 'NumpadSubtract')) zoomTo(S.pps / 1.4);
   else if (k === 'Escape') { S.sel.clear(); renderInspector(); updateButtons(); }
 });
 
