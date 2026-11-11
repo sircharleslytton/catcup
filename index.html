@@ -79,19 +79,21 @@ button, input, select { font: inherit; color: inherit; }
 .drop { margin: 0 10px 10px; border: 1.5px dashed var(--raise); border-radius: 8px; padding: 14px 12px; text-align: center; color: var(--mute); cursor: pointer; transition: border-color .15s, background .15s; }
 .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--fg); }
 .drop b { display: block; color: var(--fg); font-weight: 500; margin-bottom: 2px; }
-.mlist { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px; }
-.mitem { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 6px; border-radius: 7px; background: var(--panel-2); cursor: grab; }
-.mitem:hover { background: var(--raise); }
-.mthumb { width: 64px; height: 36px; border-radius: 4px; background: #000 center/cover no-repeat; display: grid; place-items: center; color: var(--mute); }
-.mthumb.audio { background: var(--clip-a); color: #bfe9df; }
-.mthumb svg { width: 18px; height: 18px; }
-.mname { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mmeta { font: 9.5px var(--font-mono); color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mlist { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px 8px; align-content: start; }
+.mitem { position: relative; min-width: 0; cursor: grab; }
+.mthumb { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; background: #000 center/cover no-repeat; display: grid; place-items: center; color: var(--mute); overflow: hidden; outline: 1px solid transparent; }
+.mitem:hover .mthumb { outline-color: var(--accent); }
+.mthumb.audio { background-color: #12304f; color: #bfe9df; }
+.mthumb svg { width: 20px; height: 20px; }
+.mdur { position: absolute; top: 4px; right: 5px; font: 600 9.5px var(--font-mono); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.9); }
+.mtag { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,.65); color: #fff; border-radius: 4px; padding: 1px 5px; font-size: 9.5px; }
+.mname { margin-top: 4px; font-size: 11px; line-height: 1.3; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mmeta { font: 9.5px var(--font-mono); color: var(--mute); line-height: 1.35; margin-top: 1px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mmeta.bad { color: var(--warn); }
-.madd { width: 28px; height: 28px; border-radius: 6px; border: 0; background: var(--raise); cursor: pointer; display: grid; place-items: center; }
+.madd { width: 24px; height: 24px; border-radius: 6px; border: 0; background: rgba(15,18,22,.82); color: #fff; cursor: pointer; display: grid; place-items: center; }
 .madd:hover { background: var(--accent); color: var(--accent-ink); }
 .madd svg { width: 14px; height: 14px; }
-.mcc { height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--raise); background: transparent; color: var(--mute); cursor: pointer; font: 600 9.5px var(--font-mono); letter-spacing: .04em; }
+.mcc { height: 24px; padding: 0 6px; border-radius: 6px; border: 0; background: rgba(15,18,22,.82); color: #cbd2da; cursor: pointer; font: 600 9.5px var(--font-mono); letter-spacing: .04em; }
 .mcc:hover { color: var(--fg); border-color: var(--mute); }
 .mcc.on { color: #d7ccff; border-color: var(--clip-s-hi); background: color-mix(in srgb, var(--clip-s) 45%, transparent); }
 .seg-2 { display: grid; grid-template-columns: 1fr 1fr; }
@@ -102,8 +104,9 @@ button, input, select { font: inherit; color: inherit; }
 .cue-ta:focus { outline: none; border-color: var(--accent); }
 .sel { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; max-width: 100%; color: var(--fg); }
 .note .warn, span.warn { color: var(--warn); }
-.mbtns { display: flex; gap: 4px; }
-.mdel { width: 28px; height: 28px; border-radius: 6px; border: 0; background: transparent; color: var(--mute); cursor: pointer; display: grid; place-items: center; }
+.mbtns { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 3px; opacity: 0; transition: opacity .12s; }
+.mitem:hover .mbtns, .mitem:focus-within .mbtns { opacity: 1; }
+.mdel { width: 24px; height: 24px; border-radius: 6px; border: 0; background: rgba(15,18,22,.82); color: #cbd2da; cursor: pointer; display: grid; place-items: center; }
 .mdel:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
 .mdel svg { width: 14px; height: 14px; }
 .btn.danger { background: var(--danger); color: #fff; font-weight: 600; }
@@ -1399,7 +1402,7 @@ async function importFiles(list, metas) {
       m.status = 'error'; m.err = e.message || String(e);
     }
     afterChange();
-    computePeaks(m).then(() => drawTimeline()).catch(() => {});
+    computePeaks(m).then(() => { drawTimeline(); renderMedia(); }).catch(() => {});
   }
 }
 const STILL_DUR = 5;
@@ -2352,6 +2355,26 @@ $('btnFit').onclick = () => { const e = Math.max(projEnd(), 10); zoomTo((scrolle
 
 // ---------------- media panel ----------------
 let dragMediaId = null;
+// small waveform picture for audio tiles in the media library (like CapCut)
+function wfThumb(m) {
+  if (m.wfUrl) return m.wfUrl;
+  if (!m.peaks || !m.peaks.length) return '';
+  const cv = document.createElement('canvas'); cv.width = 200; cv.height = 112;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#12304f'; g.fillRect(0, 0, 200, 112);
+  const nb = 40, per = m.peaks.length / nb;
+  let mx = 0; for (let i = 0; i < m.peaks.length; i++) if (m.peaks[i] > mx) mx = m.peaks[i];
+  mx = mx || 1;
+  for (let i = 0; i < nb; i++) {
+    let v = 0; const a = Math.floor(i * per), b = Math.max(a + 1, Math.floor((i + 1) * per));
+    for (let k = a; k < b && k < m.peaks.length; k++) v += m.peaks[k];
+    v = (v / (b - a)) / mx;
+    const h = Math.max(3, Math.pow(v, 0.7) * 100);
+    g.fillStyle = '#2f9fd6'; g.fillRect(i * 5 + 0.5, 112 - h, 3.6, h);
+  }
+  try { m.wfUrl = cv.toDataURL('image/png'); } catch (e) { return ''; }
+  return m.wfUrl;
+}
 function renderMedia() {
   const box = $('mlist');
   if (!S.media.length) {
@@ -2372,13 +2395,19 @@ function renderMedia() {
     else if (m.still) meta = 'Bild · ' + m.width + '×' + m.height;
     else meta = hms(m.duration) + ' · ' + (m.hasVideo ? (m.width ? m.width + '×' + m.height : 'Video') : 'Audio') + ' · ' + mb(m.size);
     if (m.demuxErr && m.status === 'ok') { meta = 'Nur Echtzeit-Export: ' + m.demuxErr; bad = true; }
-    const thumb = m.hasVideo
-      ? `<div class="mthumb" style="${m.thumbUrl ? `background-image:url(${m.thumbUrl})` : ''}">${m.thumbUrl ? '' : IC.film}</div>`
-      : `<div class="mthumb audio">${IC.note}</div>`;
-    d.innerHTML = `${thumb}<div style="min-width:0"><div class="mname" title="${esc(m.name)}">${esc(m.name)}</div><div class="mmeta ${bad ? 'bad' : ''}" title="${esc(meta)}">${esc(meta)}</div></div>` +
-      '<div class="mbtns">' + (m.url && m.status === 'ok' ? `<button class="madd" title="${m.still ? 'Auf die obere Videospur am Abspielkopf' : m.hasVideo ? 'Ans Ende der Hauptspur' : 'Auf eine freie Audiospur ab 0:00'}" aria-label="Zur Timeline hinzufügen">${IC.plus}</button>` : '') +
-      (m.url && m.status === 'ok' && m.hasAudio ? `<button class="mcc ${m.subs ? 'on' : ''}" title="${m.subs ? 'Untertitel neu erstellen (' + m.subs.length + ' vorhanden)' : 'Untertitel erstellen'}" aria-label="Untertitel erstellen">CC</button>` : '') +
+    const used = S.clips.some((c) => c.mediaId === m.id);
+    const ok = m.url && m.status === 'ok';
+    const dur = m.still ? 'Bild' : (m.status === 'ok' && m.duration ? hms(m.duration) : '');
+    const btns = '<div class="mbtns">' + (ok ? `<button class="madd" title="${m.still ? 'Auf die obere Videospur am Abspielkopf' : m.hasVideo ? 'Ans Ende der Hauptspur' : 'Auf eine freie Audiospur ab 0:00'}" aria-label="Zur Timeline hinzufügen">${IC.plus}</button>` : '') +
+      (ok && m.hasAudio ? `<button class="mcc ${m.subs ? 'on' : ''}" title="${m.subs ? 'Untertitel neu erstellen (' + m.subs.length + ' vorhanden)' : 'Untertitel erstellen'}" aria-label="Untertitel erstellen">CC</button>` : '') +
       `<button class="mdel" title="Aus dem Projekt entfernen" aria-label="Datei entfernen">${IC.trash}</button></div>`;
+    let style = '', inner = '', cls = 'mthumb';
+    if (m.hasVideo) { if (m.thumbUrl) style = `background-image:url(${m.thumbUrl})`; else inner = IC.film; }
+    else { cls += ' audio'; const w = wfThumb(m); if (w) style = `background-image:url(${w})`; else inner = IC.note; }
+    const info = [m.hasVideo ? (m.width && !m.still ? m.width + '×' + m.height : '') : 'Audio', mb(m.size)].filter(Boolean).join(' · ');
+    d.title = m.name + (info ? '\n' + info : '');
+    d.innerHTML = `<div class="${cls}" style="${style}">${inner}${used ? '<span class="mtag">Im Schnitt</span>' : ''}${dur ? `<span class="mdur">${dur}</span>` : ''}${btns}</div>` +
+      `<div class="mname">${esc(m.name)}</div>` + (ok && !bad ? '' : `<div class="mmeta ${bad ? 'bad' : ''}" title="${esc(meta)}">${esc(meta)}</div>`);
     box.appendChild(d);
   }
 }
